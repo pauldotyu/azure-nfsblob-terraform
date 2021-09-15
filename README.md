@@ -107,7 +107,7 @@ Here is a high-level overview of the steps taken to secure the blob container wh
     - **Expected Result:** Timeout since this VM # 2's IP has not been whitelisted at NSG
 - Exit VM # 2
 
-## Test from VM # 1 - Pass
+### Test from VM # 1 - Pass
 - SSH into VM # 1
 - In VM # 1, perform nslookup on storage account's FQDN
     - **Expected Result:** Resolves to private IP in private subnet
@@ -115,7 +115,7 @@ Here is a high-level overview of the steps taken to secure the blob container wh
     - **Expected Result:** Can successfully mount the container since VM # 1's IP has been whitelisted at NSG
 - Exit VM # 1
 
-## Add VM # 2 to NSG allow rule
+### Add VM # 2 to NSG allow rule
 - Add VM # 2 private IP address to NSG rule to allow connectivity
 - Re-validate access
     - **Expected Result:** Can now successfully mount and read from drive
