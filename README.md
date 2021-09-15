@@ -19,22 +19,19 @@ Provision an environment to demonstrate how to mount Azure Blob containers using
 
 ## The following resources will be provisioned:
 
-- Virtual network with 3 subnets
-    - internal - VMs without any public IPs
-    - external - VMs with public IPs
+- Virtual network with 2 subnets
+    - public - where VMs with public IPs will be placed
     - private - where private endpoint NIC will be placed
-- Network Security Group linked to external subnet
+- Network Security Group linked to public subnet
     - Allow SSH from my public IP
 - Network Security Group linked to private subnet
     - Allow any Tcp traffic from specified endpoints
-    - Deny all other traffic
+    - Deny all other traffic to private subnet
 - Storage Account with a default deny network rule with the following exceptions:
     - My public IP
-    - internal subnet
-    - external subnet
+    - public subnet
 - Blob storage container named "myblobs"
-- Linux VMs in internal subnet
-- Linux VMs in external subnet
+- Two Linux VMs in public subnet
 - Private endpoint for blob storage linked to private subnet
 - Private DNS zone for blob storage
     - Link to virtual network for name resolution
@@ -54,7 +51,7 @@ Provision an environment to demonstrate how to mount Azure Blob containers using
     sudo mkdir /mnt/test
 
     # mount the drive make sure your storage account name is updated in the command below
-    sudo mount -o sec=sys,vers=3,nolock,proto=tcp sanfsblob682.blob.core.windows.net:/sanfsblob682/myblobs  /mnt/test
+    sudo mount -o sec=sys,vers=3,nolock,proto=tcp sanfsblob901.blob.core.windows.net:/sanfsblob901/myblobs  /mnt/test
 
     # assume ownership
     sudo chown -R $USER /mnt/test
@@ -87,35 +84,38 @@ Here is a high-level overview of the steps taken to secure the blob container wh
 
 > Note: this configuration is included in the Terraform configuration files
 
-- Create a new subnet
-- Create a private endpoint for the storage account and attach it to the new subnet
+- Create a new private subnet
+- Create a private endpoint for the storage account and link it to the new private subnet
 - Creation of a private endpoint in the Azure Portal will also create a Azure Private DNS zone, make sure this zone is linked to your virtual network
-- Set the `disable-private-endpoint-network-policies` flag to false using the following command (NOTE: this is already configured for the `private` subnet in the Terraform):
+- Set the `disable-private-endpoint-network-policies` flag to false using the following command (NOTE: this is already configured for the `private` subnet in the Terraform configuration file):
     ```sh
     # this makes the NSGs work
     az network vnet subnet update --disable-private-endpoint-network-policies false --name private --resource-group rg-nfsblob --vnet-name vn-nfsblob
     ```
-- Create a new network security group and associate it with the new subnet
+- Create a new network security group and associate it with the new private subnet
 - Add rules as needed:
     - Allow traffic from your "approved sources" (network range, list of IPs, single IP)
-    - Deny all other traffic
+    - Deny all other traffic to the new private subnet IP range
 
 ## Validation steps
 
-- SSH into external VM # 2
-- SSH into internal VM # 1
-- In internal VM # 1, perform nslookup on storage account's FQDN
+### Test from VM # 2 - Fail
+- SSH into VM # 2
+- In VM # 2, perform nslookup on storage account's FQDN
     - **Expected Result:** Resolves to private IP in private subnet
 - Install nfs-common and attempt to mount the blob container
-    - **Expected Result:** Timeout since this internal VM # 1's IP has not been whitelisted at NSG
-- Exit internal VM # 1
-- In external VM # 2, perform nslookup on storage account's FQDN
+    - **Expected Result:** Timeout since this VM # 2's IP has not been whitelisted at NSG
+- Exit VM # 2
+
+## Test from VM # 1 - Pass
+- SSH into VM # 1
+- In VM # 1, perform nslookup on storage account's FQDN
     - **Expected Result:** Resolves to private IP in private subnet
 - Install nfs-common and attempt to mount the blob container
-    - **Expected Result:** Timeout since this external VM # 2's IP has not been whitelisted at NSG
-- Exit external VM # 2
-- SSH into external VM # 1
-- In external VM # 1, perform nslookup on storage account's FQDN
-    - **Expected Result:** Resolves to private IP in private subnet
-- Install nfs-common and attempt to mount the blob container
-    - **Expected Result:** Can successfully mount the container since external VM # 1's IP has been whitelisted at NSG
+    - **Expected Result:** Can successfully mount the container since VM # 1's IP has been whitelisted at NSG
+- Exit VM # 1
+
+## Add VM # 2 to NSG allow rule
+- Add VM # 2 private IP address to NSG rule to allow connectivity
+- Re-validate access
+    - **Expected Result:** Can now successfully mount and read from drive

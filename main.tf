@@ -23,8 +23,8 @@ resource "azurerm_virtual_network" "nfsblob" {
   resource_group_name = azurerm_resource_group.nfsblob.name
 }
 
-resource "azurerm_subnet" "internal" {
-  name                 = "internal"
+resource "azurerm_subnet" "public" {
+  name                 = "public"
   resource_group_name  = azurerm_resource_group.nfsblob.name
   virtual_network_name = azurerm_virtual_network.nfsblob.name
   address_prefixes     = ["10.80.1.0/27"]
@@ -32,35 +32,27 @@ resource "azurerm_subnet" "internal" {
 }
 
 
-resource "azurerm_subnet" "external" {
-  name                 = "external"
-  resource_group_name  = azurerm_resource_group.nfsblob.name
-  virtual_network_name = azurerm_virtual_network.nfsblob.name
-  address_prefixes     = ["10.80.1.32/27"]
-  service_endpoints    = ["Microsoft.Storage"]
-}
-
-resource "azurerm_network_security_group" "external" {
-  name                = "nsg-nfsblob-external"
+resource "azurerm_network_security_group" "public" {
+  name                = "nsg-nfsblob-public"
   location            = azurerm_resource_group.nfsblob.location
   resource_group_name = azurerm_resource_group.nfsblob.name
 
   security_rule {
-    name                       = "AllowMe"
+    name                       = "AllowSSH"
     priority                   = 100
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_range     = "*"
+    destination_port_range     = "22"
     source_address_prefix      = data.http.ifconfig.body
     destination_address_prefix = "*"
   }
 }
 
-resource "azurerm_subnet_network_security_group_association" "external" {
-  subnet_id                 = azurerm_subnet.external.id
-  network_security_group_id = azurerm_network_security_group.external.id
+resource "azurerm_subnet_network_security_group_association" "public" {
+  subnet_id                 = azurerm_subnet.public.id
+  network_security_group_id = azurerm_network_security_group.public.id
 }
 
 resource "azurerm_storage_account" "nfsblob" {
@@ -82,14 +74,12 @@ resource "azurerm_storage_account" "nfsblob" {
     ]
 
     virtual_network_subnet_ids = [
-      azurerm_subnet.internal.id,
-      azurerm_subnet.external.id
+      azurerm_subnet.public.id
     ]
   }
 
   depends_on = [
-    azurerm_subnet.internal,
-    azurerm_subnet.external
+    azurerm_subnet.public
   ]
 }
 
@@ -99,85 +89,42 @@ resource "azurerm_storage_container" "nfsblob" {
   container_access_type = "private"
 }
 
-resource "azurerm_network_interface" "internal" {
-  count               = 1
-  name                = "vm-nfsblobint-${count.index + 1}-nic"
-  location            = azurerm_resource_group.nfsblob.location
-  resource_group_name = azurerm_resource_group.nfsblob.name
-
-  ip_configuration {
-    name                          = "internal"
-    subnet_id                     = azurerm_subnet.internal.id
-    private_ip_address_allocation = "Dynamic"
-  }
-}
-
-resource "azurerm_linux_virtual_machine" "internal" {
-  count               = 1
-  name                = "vm-nfsblobint-${count.index + 1}"
-  resource_group_name = azurerm_resource_group.nfsblob.name
-  location            = azurerm_resource_group.nfsblob.location
-  size                = "Standard_B2ms"
-  admin_username      = var.vm_username
-  network_interface_ids = [
-    azurerm_network_interface.internal[count.index].id,
-  ]
-
-  admin_password                  = var.vm_password
-  disable_password_authentication = false
-
-  os_disk {
-    caching              = "ReadWrite"
-    storage_account_type = "Standard_LRS"
-  }
-
-  source_image_reference {
-    publisher = "Canonical"
-    offer     = "UbuntuServer"
-    sku       = "18.04-LTS"
-    version   = "latest"
-  }
-
-  depends_on = [
-    azurerm_private_dns_zone_virtual_network_link.private
-  ]
-}
-
-resource "azurerm_public_ip" "external" {
+resource "azurerm_public_ip" "nfsblob" {
   count               = 2
-  name                = "vm-nfsblobext-${count.index + 1}-pip"
+  name                = "vm-nfsblob-${count.index + 1}-pip"
   resource_group_name = azurerm_resource_group.nfsblob.name
   location            = azurerm_resource_group.nfsblob.location
   allocation_method   = "Static"
 }
 
-resource "azurerm_network_interface" "external" {
+resource "azurerm_network_interface" "nfsblob" {
   count               = 2
-  name                = "vm-nfsblobext-${count.index + 1}-nic"
+  name                = "vm-nfsblob-${count.index + 1}-nic"
   location            = azurerm_resource_group.nfsblob.location
   resource_group_name = azurerm_resource_group.nfsblob.name
 
   ip_configuration {
-    name                          = "external"
-    subnet_id                     = azurerm_subnet.external.id
+    name                          = "internal"
+    subnet_id                     = azurerm_subnet.public.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.external[count.index].id
+    public_ip_address_id          = azurerm_public_ip.nfsblob[count.index].id
   }
 
   depends_on = [
-    azurerm_subnet_network_security_group_association.external
+    azurerm_subnet_network_security_group_association.public
   ]
 }
 
-resource "azurerm_linux_virtual_machine" "external" {
+resource "azurerm_linux_virtual_machine" "nfsblob" {
   count               = 2
-  name                = "vm-nfsblobext-${count.index + 1}"
+  name                = "vm-nfsblob-${count.index + 1}"
   resource_group_name = azurerm_resource_group.nfsblob.name
   location            = azurerm_resource_group.nfsblob.location
   size                = "Standard_B2ms"
   admin_username      = var.vm_username
+
   network_interface_ids = [
-    azurerm_network_interface.external[count.index].id,
+    azurerm_network_interface.nfsblob[count.index].id,
   ]
 
   admin_ssh_key {
@@ -198,36 +145,35 @@ resource "azurerm_linux_virtual_machine" "external" {
   }
 
   depends_on = [
-    azurerm_private_dns_zone_virtual_network_link.private
+    azurerm_private_dns_zone_virtual_network_link.nfsblob
   ]
 }
-
 
 resource "azurerm_subnet" "private" {
   name                                           = "private"
   resource_group_name                            = azurerm_resource_group.nfsblob.name
   virtual_network_name                           = azurerm_virtual_network.nfsblob.name
-  address_prefixes                               = ["10.80.1.64/27"]
+  address_prefixes                               = ["10.80.1.32/27"]
   enforce_private_link_endpoint_network_policies = false
 }
 
-resource "azurerm_private_dns_zone" "private" {
+resource "azurerm_private_dns_zone" "nfsblob" {
   name                = "privatelink.blob.core.windows.net"
   resource_group_name = azurerm_resource_group.nfsblob.name
 }
 
-resource "azurerm_private_dns_zone_virtual_network_link" "private" {
-  name                  = "vn-privatelink.blob.core.windows.net"
+resource "azurerm_private_dns_zone_virtual_network_link" "nfsblob" {
+  name                  = "${azurerm_virtual_network.nfsblob.name}-link"
   resource_group_name   = azurerm_resource_group.nfsblob.name
-  private_dns_zone_name = azurerm_private_dns_zone.private.name
+  private_dns_zone_name = azurerm_private_dns_zone.nfsblob.name
   virtual_network_id    = azurerm_virtual_network.nfsblob.id
 
   depends_on = [
-    azurerm_private_endpoint.private
+    azurerm_private_endpoint.nfsblob
   ]
 }
 
-resource "azurerm_private_endpoint" "private" {
+resource "azurerm_private_endpoint" "nfsblob" {
   name                = "sanfsblob${random_integer.nfsblob.result}-pe"
   resource_group_name = azurerm_resource_group.nfsblob.name
   location            = azurerm_resource_group.nfsblob.location
@@ -236,7 +182,7 @@ resource "azurerm_private_endpoint" "private" {
   private_dns_zone_group {
     name = "default"
     private_dns_zone_ids = [
-      azurerm_private_dns_zone.private.id
+      azurerm_private_dns_zone.nfsblob.id
     ]
   }
 
@@ -251,8 +197,8 @@ resource "azurerm_private_endpoint" "private" {
 
   depends_on = [
     azurerm_subnet.private,
-    azurerm_private_dns_zone.private,
-    azurerm_storage_account.nfsblob
+    azurerm_storage_account.nfsblob,
+    azurerm_private_dns_zone.nfsblob
   ]
 }
 
@@ -262,14 +208,14 @@ resource "azurerm_network_security_group" "private" {
   resource_group_name = azurerm_resource_group.nfsblob.name
 
   security_rule {
-    name                       = "AllowExternalToPrivate"
+    name                       = "AllowPublicToPrivate"
     priority                   = 100
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
     destination_port_range     = "*"
-    source_address_prefix      = azurerm_network_interface.external[0].private_ip_address #only allow first nic through
+    source_address_prefix      = azurerm_network_interface.nfsblob[0].private_ip_address #only allow first nic through
     destination_address_prefix = "*"
   }
 
