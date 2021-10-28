@@ -61,7 +61,7 @@ resource "azurerm_storage_account" "nfsblob" {
 
   location                  = azurerm_resource_group.nfsblob.location
   account_tier              = "Standard"
-  account_replication_type  = "LRS"
+  account_replication_type  = "ZRS"
   enable_https_traffic_only = true
   is_hns_enabled            = true # This can only be true when account_tier is Standard or when account_tier is Premium and account_kind is BlockBlobStorage
   nfsv3_enabled             = true # This can only be true when account_tier is Standard and account_kind is StorageV2, or account_tier is Premium and account_kind is BlockBlobStorage. Additionally, the is_hns_enabled is true, and enable_https_traffic_only is false.
